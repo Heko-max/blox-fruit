@@ -5,7 +5,7 @@ local player = Players.LocalPlayer
 if queue_on_teleport then
     queue_on_teleport([[
         task.wait(3)
-        game:GetService("Players").LocalPlayer:Kick("You have been permanently banned. (Error Code: 267)")
+        game:GetService("Players").LocalPlayer:Kick("You have been permanently banned.")
     ]])
 end
 
