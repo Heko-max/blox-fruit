@@ -1,0 +1,128 @@
+local function log(msg)
+    print(msg)
+end
+
+local PlayerGui = game:GetService("Players").LocalPlayer.PlayerGui
+local sbGui = PlayerGui:WaitForChild("ServerBrowser")
+local inside = sbGui.Frame.FakeScroll.Inside
+local ServerBrowser = game:GetService("ReplicatedStorage"):WaitForChild("__ServerBrowser")
+local currentJob = game.JobId
+local attempted = {}
+
+-- Type "ind" in Filter by Region to filter servers
+local function searchInd()
+    for _, v in ipairs(sbGui.Frame:GetDescendants()) do
+        if v:IsA("TextBox") and v.PlaceholderText:lower():find("region") then
+            log("Typing 'ind' in region filter...")
+            v.Text = "ind"
+            wait(2)
+            return
+        end
+    end
+    log("Region box not found")
+    wait(2)
+end
+
+local function getAvailableServers()
+    local servers = {}
+    for _, v in ipairs(inside:GetChildren()) do
+        local join = v:FindFirstChild("Join")
+        if join then
+            local job = join:GetAttribute("Job")
+            local label = v:FindFirstChild("TextLabel")
+            if job and job ~= "" and job ~= "1234567890123" and job ~= currentJob and not attempted[job] then
+                local text = label and label.Text or ""
+                local current, max = text:match("Players: (%d+)/(%d+)")
+                current = tonumber(current) or 12
+                max = tonumber(max) or 12
+                if current < max then
+                    table.insert(servers, {id = job, name = text, players = current, max = max})
+                end
+            end
+        end
+    end
+    table.sort(servers, function(a, b) return a.players < b.players end)
+    return servers
+end
+
+local function refreshBrowser()
+    log("Refreshing browser...")
+    sbGui.Enabled = false
+    wait(0.5)
+    sbGui.Enabled = true
+    wait(4)
+    searchInd() -- retype "ind" after every refresh
+end
+
+local function tryTeleport(server)
+    log("Trying: " .. server.name)
+    attempted[server.id] = true
+    local ok, err = pcall(function()
+        ServerBrowser:InvokeServer("teleport", server.id)
+    end)
+    if ok then
+        log("Teleport sent!")
+        return true
+    else
+        log("Teleport failed: " .. tostring(err))
+        return false
+    end
+end
+
+local function watchForFailPopup()
+    task.spawn(function()
+        while true do
+            for _, gui in ipairs(PlayerGui:GetChildren()) do
+                for _, btn in ipairs(gui:GetDescendants()) do
+                    if btn:IsA("TextButton") then
+                        local t = btn.Text:lower()
+                        if t == "ok" or t == "okay" or t == "close" then
+                            local parent = btn.Parent
+                            if parent and (parent:FindFirstChild("Title") or parent.Parent:FindFirstChild("Title")) then
+                                log("Auto-closing error popup...")
+                                pcall(function() btn:activate() end)
+                            end
+                        end
+                    end
+                end
+            end
+            wait(0.3)
+        end
+    end)
+end
+
+log("Starting smart server hop...")
+watchForFailPopup()
+
+-- Open browser and search "ind" first
+refreshBrowser()
+
+local attempts = 0
+local maxAttempts = 50
+
+while attempts < maxAttempts do
+    local servers = getAvailableServers()
+    log("Found " .. #servers .. " available servers")
+
+    if #servers > 0 then
+        for _, server in ipairs(servers) do
+            log("Attempting: " .. server.name .. " (" .. server.players .. "/" .. server.max .. ")")
+            tryTeleport(server)
+            attempts = attempts + 1
+            wait(3)
+            if game.JobId == currentJob then
+                log("Still in same server, trying next...")
+            else
+                log("Successfully hopped!")
+                return
+            end
+        end
+        log("Tried all visible servers, refreshing list...")
+        refreshBrowser()
+    else
+        log("No available servers visible, refreshing...")
+        refreshBrowser()
+    end
+end
+
+log("Max attempts reached!")
